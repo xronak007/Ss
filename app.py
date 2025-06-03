@@ -14,7 +14,7 @@ import json
 # --- Configuration ---
 API_ID = "24319080"
 API_HASH = "e63058a24d2b503b797d2e3fc8d65bed"
-SESSION_STRING = "1BVtsOHIBu5tcBtUAp4RjSkEp-nulngW9ux2MPNIhKcqogrV2xdQidrdmV4hELUwrWA7LlET4shCb1GtJE9HXLUpGmGpiJ_n3qOgPg6sf5LVNdYbQeJn4kT7XCwcls-PsbRG1Hq06kzlcN58YKa-EafZl8Z4UyzWeff5StZInoxjmcdzKYAqjwjbHUFGTDHl7aMQ6BFNJ_52tIe_D4fZ9EA7d4vODKTeAnwI0KCSYByATs76xvXOLN5Xr_-IW8yRA7jBKGD9tWPa_NIwnnrzGe5QO6CsAEzVMMaoNld8pknmfizL-P0SEZ7y4eWbE3IyMk-1gSBnp4wTvVM8AsuElTHliGWYQvP4="
+SESSION_STRING = "1BVtsOHIBu0G5ZeKdxoZWobhoTLehHvYi-gBOInKNrlWqVsYaYasBHknIm5OGXcytw2JBybvoze_0r4T5qfHIreT7urZt73ecx05-tmi5VFGDLPoTtOsE16RpFAOwAI0nLZ9_XMIhfLMkJtVy-Z6853k_jKh2ctE8g0oaIrSpYLz3TGVTCFQJ-YZ-9DRasfpFvrXV3H99ZiEbCm-C_TIOF0iE77x_aUxSShIj22BS1OmmcCG983Kckonh2tGyWaVWuls_dQf2EtIEKv0ojVm-nOU4WiJHb4TuTVVYl2o4bzikcOxHWe5Rb2vcLLYqJ852h68F8rv950TNSTiiO3mVl-VRF2oHAGc="
 BOT_TOKEN = "7742035768:AAF7Htolg4m1ad6ghTMue5gp6Z3RwZaF7bo"
 
 USERNAME = "@xRonak"
@@ -27,7 +27,12 @@ SAVE_CHAT_ID = 7087865594
 
 TARGET_GROUP_IDS = [-1001234567890, -1000987654321]  # Замени на актуальные
 FORWARD_GROUP_ID = -1002174077087  # Куда отправлять найденные cc
-MONITOR_GROUP_ID = -1002682944548  # Группа для мониторинга сообщений
+
+# Добавляем несколько каналов/групп для мониторинга сообщений
+MONITOR_GROUP_IDS = [
+    -1002682944548,  # Существующая группа
+    'asianprozauth01'  # Новый канал для мониторинга по username
+]
 
 client = None
 bot = None
@@ -82,7 +87,6 @@ XFORCE_BOT_LINK_RE = re.compile(
     re.IGNORECASE
 )
 
-# Добавляем регулярку для tg://resolve ссылок
 TG_RESOLVE_LINK_RE = re.compile(
     r"tg://resolve\?domain=(?P<botname>[A-Za-z0-9_]+)&start=(?P<startapp>[a-zA-Z0-9_-]+)",
     re.IGNORECASE
@@ -261,7 +265,6 @@ async def process_single_message(message_data):
             except Exception as e:
                 logging.error(f"Failed to fetch from xForce bot: {e}")
 
-        # Обработка новых tg://resolve ссылок
         tg_links = TG_RESOLVE_LINK_RE.findall(message_text)
         for botname, startapp_token in tg_links:
             try:
@@ -490,11 +493,6 @@ async def main():
                         return
                     return
 
-            # Убираем ответ на личные сообщения - ничего не делаем
-            # if event.chat_id not in TARGET_GROUP_IDS:
-            #     if event.is_private:
-            #         return
-
         @client.on(events.NewMessage(pattern=INFO_COMMAND))
         async def handle_info_command(event):
             if event.sender_id == AUTHORIZED_USER_ID:
@@ -520,7 +518,8 @@ async def main():
                     chat_id = event.chat_id
                 await event.reply(f"Chat ID: {chat_id}")
 
-        @client.on(events.NewMessage(chats=MONITOR_GROUP_ID))
+        # Обработчик мониторинга для нескольких каналов/групп
+        @client.on(events.NewMessage(chats=MONITOR_GROUP_IDS))
         async def monitor_cc_numbers(event):
             global is_active, is_processing
             if not is_active or not is_processing:
@@ -531,9 +530,9 @@ async def main():
 
                 # Добавляем в очередь для обработки
                 await processing_queue.put((message_text, message_id))
-                logging.info(f"Added message {message_id} to processing queue")
+                logging.info(f"Added message {message_id} from chat {event.chat_id} to processing queue")
 
-                # Дополнительно обрабатываем tg://resolve ссылки (автоматически)
+                # Обрабатываем tg://resolve ссылки
                 tg_links = TG_RESOLVE_LINK_RE.findall(message_text)
                 for botname, startapp_token in tg_links:
                     logging.info(f"Found tg://resolve link: bot={botname}, start={startapp_token}")
