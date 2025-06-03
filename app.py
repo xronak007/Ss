@@ -27,12 +27,7 @@ SAVE_CHAT_ID = 7087865594
 
 TARGET_GROUP_IDS = [-1001234567890, -1000987654321]  # Замени на актуальные
 FORWARD_GROUP_ID = -1002174077087  # Куда отправлять найденные cc
-
-# Добавляем несколько каналов/групп для мониторинга сообщений
-MONITOR_GROUP_IDS = [
-    -1002682944548,  # Существующая группа
-    'asianprozauth01'  # Новый канал для мониторинга по username
-]
+MONITOR_GROUP_IDS = [-1002682944548]  # Существующая группа для мониторинга
 
 client = None
 bot = None
@@ -474,6 +469,11 @@ async def main():
         print(f"User {me.username} started")
         logging.info(f"User {me.username} started")
 
+        # Получаем entity канала AsianPro
+        asianpro_channel = await client.get_entity('asianprozauth01')
+        asianpro_channel_id = asianpro_channel.id
+        logging.info(f"AsianPro channel ID: {asianpro_channel_id}")
+
         @client.on(events.NewMessage(incoming=True))
         async def handle_message(event):
             global is_active, last_online_time
@@ -518,7 +518,7 @@ async def main():
                     chat_id = event.chat_id
                 await event.reply(f"Chat ID: {chat_id}")
 
-        # Обработчик мониторинга для нескольких каналов/групп
+        # Обработчик мониторинга для существующих групп
         @client.on(events.NewMessage(chats=MONITOR_GROUP_IDS))
         async def monitor_cc_numbers(event):
             global is_active, is_processing
@@ -528,11 +528,9 @@ async def main():
                 message_text = event.message.message or ""
                 message_id = event.message.id
 
-                # Добавляем в очередь для обработки
                 await processing_queue.put((message_text, message_id))
                 logging.info(f"Added message {message_id} from chat {event.chat_id} to processing queue")
 
-                # Обрабатываем tg://resolve ссылки
                 tg_links = TG_RESOLVE_LINK_RE.findall(message_text)
                 for botname, startapp_token in tg_links:
                     logging.info(f"Found tg://resolve link: bot={botname}, start={startapp_token}")
@@ -542,6 +540,30 @@ async def main():
 
             except Exception as e:
                 logging.error(f"Error handling monitor message: {e}")
+
+        # Отдельный обработчик для канала asianprozauth01
+        @client.on(events.NewMessage(chats=asianpro_channel_id))
+        async def monitor_asianpro_message(event):
+            global is_active, is_processing
+            if not is_active or not is_processing:
+                return
+            try:
+                message_text = event.message.message or ""
+                message_id = event.message.id
+
+                logging.info(f"Received message {message_id} from AsianPro channel for processing")
+
+                await processing_queue.put((message_text, message_id))
+
+                tg_links = TG_RESOLVE_LINK_RE.findall(message_text)
+                for botname, startapp_token in tg_links:
+                    logging.info(f"Found tg://resolve link in AsianPro: bot={botname}, start={startapp_token}")
+                    ccs_from_bot = await fetch_ccs_from_xforce_link(client, botname, startapp_token)
+                    for cc, month, year, cvv in ccs_from_bot:
+                        await process_single_cc(cc, month, year, cvv)
+
+            except Exception as e:
+                logging.error(f"Error handling AsianPro message: {e}")
 
         asyncio.create_task(process_message_queue())
 
